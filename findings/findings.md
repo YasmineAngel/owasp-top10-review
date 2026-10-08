@@ -12,9 +12,9 @@
 
 | ID | Title | OWASP 2025 | Severity | Status |
 |----|-------|------------|----------|--------|
-| F-01 | Debug mode and Werkzeug debugger always enabled | A02 | Medium | Fixed in PR #374 |
-| F-02 | Access control issue (details withheld) | A01 | High | Reported privately |
-| F-03 | Empty and short passwords accepted | A07 | Medium | Fixed in PR #374 |
+| F-01 | Debug mode and Werkzeug debugger always enabled | A02 | Medium | Fixed, PR #374 merged |
+| F-02 | Role checks bypassed: any user gets admin access | A01 | High | Disclosed privately, fixed upstream |
+| F-03 | Empty and short passwords accepted | A07 | Medium | Fixed, PR #374 merged |
 
 Plus 10 lower-severity observations (O-01 to O-10) from code review.
 
@@ -41,18 +41,40 @@ Plus 10 lower-severity observations (O-01 to O-10) from code review.
   | No `DEBUG` set | Debug mode on, debugger active | Debug mode off |
   | `DEBUG=true` | On (setting ignored) | On, as requested |
 
-- **Status:** Fixed in [PR #374](https://github.com/melihcolpan/flask-restful-login/pull/374), commit `ef26cef`
+- **Status:** Fixed in merged [PR #374](https://github.com/melihcolpan/flask-restful-login/pull/374), commit `ef26cef`
 
-## F-02: Access control issue (details withheld)
+## F-02: Role checks bypassed, any authenticated user gets admin and super-admin access
 
-- **OWASP:** A01:2025 Broken Access Control
+- **OWASP:** A01:2025 Broken Access Control (checklist A01.2, A10.3)
 - **Severity:** High
-- **Description:** Withheld pending a fix from the maintainer.
-- **Evidence:** Reproduced live on a local instance; a patch was written and validated
-  locally (blocks unauthorized access, legitimate access unaffected). Not pushed publicly.
+- **Location:** `api/roles/role_required.py`, `permission()` decorator
+- **Description:** The role check only runs when `request.authorization is None`.
+  Since Werkzeug 2.3, `request.authorization` also parses Bearer tokens, so with the
+  pinned Werkzeug 3.1.9 it is never `None` for a Bearer request. The check is skipped
+  and the decorator falls through to the handler. It also fails open: any request
+  that doesn't enter the `if` block is allowed.
+- **Evidence:** Logged in as `alice` (role `user`); `GET /data_admin`,
+  `GET /data_super_admin` and `GET /users` all returned data.
+- **Impact:** Vertical privilege escalation; any registered user can list other
+  users' usernames and emails and reach every admin-only route.
+- **Fix:** Read the token from `request.authorization.token`, deny by default
+  (401 if missing or invalid, 403 if the role is too low).
+- **Fix validation (local only, not pushed):**
+
+  | Request | Before | After |
+  |---------|--------|-------|
+  | `user` → `/data_admin`, `/data_super_admin`, `/users` | Data returned | Permission denied |
+  | `admin` → `/data_admin` | Allowed | Allowed |
+  | `admin` → `/data_super_admin` | Allowed (bug) | Permission denied |
+
 - **Status:** Reported privately to the maintainer by email on 2026-10-08, with
-  reproduction steps, root cause and a tested patch. Full details will be published here
-  once a fix is released, or after 2027-01-06 (90 days), whichever comes first.
+  reproduction steps, root cause and a tested patch. The maintainer reproduced it and fixed it
+  the same day in [`328333f`](https://github.com/melihcolpan/flask-restful-login/commit/328333f):
+  the decorator now reads the token from `request.authorization` and denies by default
+  (401 for a missing or invalid token, 403 for an insufficient role), with regression tests
+  for each role. The same decorator had been copied into the maintainer's
+  `flask-login-example` project, where it exposed the user list; fixed there in `9a95f70`.
+  Both commits credit the reporter. Published with the maintainer's agreement.
 
 ## F-03: Empty and short passwords accepted at registration and password reset
 
@@ -70,7 +92,7 @@ Plus 10 lower-severity observations (O-01 to O-10) from code review.
   on both registration and password reset. Four regression tests added.
 - **Fix validation:** Test suite went from 11 to 15 tests, all passing. New tests cover
   empty password, 5-character password, whitespace-only username, and short password on reset.
-- **Status:** Fixed in [PR #374](https://github.com/melihcolpan/flask-restful-login/pull/374), commit `73868f2`
+- **Status:** Fixed in merged [PR #374](https://github.com/melihcolpan/flask-restful-login/pull/374), commit `73868f2`
 
 ---
 

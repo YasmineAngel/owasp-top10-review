@@ -5,7 +5,7 @@ a small Flask REST API with token authentication and role-based access control, 
 **OWASP Top 10:2025**. Findings were verified live, fixed where safe to do so, and contributed
 back upstream.
 
-**Pull request:** [Security hardening: respect DEBUG setting and enforce password policy](https://github.com/melihcolpan/flask-restful-login/pull/374)
+**Pull request (merged):** [Security hardening: respect DEBUG setting and enforce password policy](https://github.com/melihcolpan/flask-restful-login/pull/374)
 
 ## Scope
 
@@ -20,9 +20,9 @@ back upstream.
 
 | ID | Finding | OWASP 2025 | Severity | Status |
 |----|---------|------------|----------|--------|
-| F-01 | Debug mode and Werkzeug debugger always enabled, ignoring the `DEBUG` setting | A02 Security Misconfiguration | Medium | Fixed in PR |
-| F-02 | Access control issue (details withheld) | A01 Broken Access Control | High | Reported privately to the maintainer, fix validated locally |
-| F-03 | Empty and short passwords accepted at registration and password reset | A07 Authentication Failures | Medium | Fixed in PR |
+| F-01 | Debug mode and Werkzeug debugger always enabled, ignoring the `DEBUG` setting | A02 Security Misconfiguration | Medium | Fixed, PR merged |
+| F-02 | Role checks bypassed: any authenticated user reaches admin and super-admin routes | A01 Broken Access Control | High | Disclosed privately, fixed upstream ([`328333f`](https://github.com/melihcolpan/flask-restful-login/commit/328333f)) |
+| F-03 | Empty and short passwords accepted at registration and password reset | A07 Authentication Failures | Medium | Fixed, PR merged |
 
 Additional observations (lower severity, documented in [`findings/findings.md`](findings/findings.md)):
 logout only revokes the refresh token, password changes don't invalidate existing tokens,
@@ -36,9 +36,12 @@ CVEs (`pip-audit`).
 
 ## Highlights
 
-**A dependency upgrade silently disabled a security control (F-02).** The vulnerable code was
-correct when written. A change in a library's behavior made the check stop running, with no error
-and no failing test. A scanner looking for known-bad patterns would not flag it; it only shows up by
+**A dependency upgrade silently disabled a security control (F-02).** The role-check decorator
+only ran its check when `request.authorization` was `None`, which was always true for Bearer tokens
+in older Werkzeug. Since Werkzeug 2.3, `request.authorization` also parses Bearer tokens, so with the
+pinned 3.1.9 the check was skipped for every request and a plain `user` could read admin routes and
+the user directory. The code was correct when written; the library change made it stop running, with
+no error and no failing test. A scanner looking for known-bad patterns would not flag it; it only shows up by
 reading the logic and testing it live. The check also failed *open*, so when it stopped running,
 requests were allowed instead of denied.
 
@@ -49,7 +52,11 @@ server with no `DEBUG` set and observing the debugger come up.
 **Responsible disclosure.** The project has no `SECURITY.md` and private vulnerability reporting is
 disabled, so F-02 was reported to the maintainer by email with reproduction steps, root cause, a
 tested patch and a 90-day disclosure window. Only the two low-risk hardening fixes went into the
-public pull request. Full details of F-02 will be added here once a fix is published.
+public pull request. The maintainer reproduced F-02 and fixed it the same day
+([`328333f`](https://github.com/melihcolpan/flask-restful-login/commit/328333f)), found and fixed the
+same flaw in a second project of his, `flask-login-example` (`9a95f70`), credited the report in both
+commits, enabled private vulnerability reporting, and merged the hardening PR. Details published with
+his agreement.
 
 ## Fix validation
 
